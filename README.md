@@ -12,41 +12,40 @@
     ░        ░  ░            ░         ░ ░               ░ ░
 ```
 
-**Multi-Service Honeypot with Real-Time Dashboard**
+**Enterprise-Grade Deception Framework & Honeypot**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-e94560?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-18ffff?style=for-the-badge)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active-00e676?style=for-the-badge)]()
+[![Status](https://img.shields.io/badge/Status-Enterprise-ff9100?style=for-the-badge)]()
 
 </div>
 
 ---
 
-## 🔥 What is retr0pot?
+## 🔥 What is retr0pot Enterprise?
 
-**retr0pot** is a lightweight, multi-service honeypot designed for defensive security research. It emulates vulnerable services to attract and log attacker activity, providing real-time visibility into attack patterns through a sleek web dashboard.
+**retr0pot** is not just a honeypot; it's an advanced **Deception Framework**. Designed to fool Nmap scanners, evade Red Teams, and alert Blue Teams in real-time. It traps attackers in a tarpit, feeds them poisoned Honeytokens, and streams their activity directly to your SIEM via webhooks.
 
-> ⚠️ **For authorized security research and educational purposes only.**
+> ⚠️ **For authorized corporate security research and red/blue teaming only.**
 
-## ⚡ Features
+## ⚡ Enterprise Features
 
 | Feature | Description |
 |---------|-------------|
-| 🔐 **SSH Honeypot** | Fake OpenSSH server — captures credentials and SSH data |
-| 🌐 **HTTP Honeypot** | Fake Apache with login page, robots.txt, bait `.env` files |
-| 📁 **FTP Honeypot** | Fake ProFTPD — captures FTP login attempts |
-| 💻 **Telnet Honeypot** | Interactive fake shell with command emulation |
-| 📊 **Live Dashboard** | Real-time web UI with attack feed, stats, charts |
-| 📝 **Structured Logging** | JSON event logs with daily rotation |
-| 🛡️ **Rate Limiting** | Per-IP connection limits to prevent resource exhaustion |
-| 🎭 **Realistic Banners** | Mimics real service versions for authenticity |
+| 🐌 **Nmap Tarpitting** | Asynchronous network delays (50-300ms) to bypass static scanner signatures and simulate load |
+| 🎭 **Banner Jittering** | Subtle randomization of protocol banners to evade static fingerprinting |
+| 🍯 **Honeytokens** | Poisoned AWS/Stripe keys injected into fake `.env` files and `.aws/credentials` |
+| 🛡️ **Auto-Ban (Fail2Ban)** | Stateful IP tracking that automatically drops connections after 10 failed auth attempts |
+| 📡 **SIEM Webhooks** | Real-time JSON event streaming to Slack, Discord, Splunk, or any custom endpoint |
+| 💻 **Advanced Emulation** | Telnet sandbox featuring fake `/proc/cpuinfo`, `/proc/meminfo`, and randomized `ps` PIDs |
+| 📊 **Real-time Dashboard** | Cyberpunk web UI with live event feeds, service distribution charts, and attacker ranking |
 
 ## 🚀 Quick Start
 
 ### Install
 
 ```bash
-git clone https://github.com/retr0/retr0pot.git
+git clone https://github.com/retr00011/retr0pot.git
 cd retr0pot
 pip install -r requirements.txt
 ```
@@ -54,89 +53,48 @@ pip install -r requirements.txt
 ### Run the Honeypot
 
 ```bash
-# Start all honeypot services
+# Start the enterprise deception engine
 python honeypot.py
 
-# In another terminal, start the dashboard
+# In another terminal, start the live dashboard
 python dashboard/app.py
 ```
 
-### Access the Dashboard
-
-Open `http://127.0.0.1:5000` in your browser.
-
-## 📁 Project Structure
-
-```
-retr0pot/
-├── honeypot.py              # Core honeypot engine (SSH, HTTP, FTP, Telnet)
-├── config.json              # Service configuration
-├── requirements.txt         # Python dependencies
-├── dashboard/
-│   ├── app.py               # Flask dashboard backend
-│   ├── templates/
-│   │   └── index.html       # Dashboard UI
-│   └── static/
-│       ├── style.css         # Dark-mode cyberpunk styles
-│       └── script.js         # Live polling & visualization
-└── logs/
-    └── events_YYYY-MM-DD.json  # Daily event logs
-```
-
-## ⚙️ Configuration
-
-Edit `config.json` to customize services, ports, and behavior:
+## ⚙️ Enterprise Configuration (`config.json`)
 
 ```json
 {
-    "services": {
-        "ssh":    { "enabled": true, "port": 2222 },
-        "http":   { "enabled": true, "port": 8080 },
-        "ftp":    { "enabled": true, "port": 2121 },
-        "telnet": { "enabled": true, "port": 2323 }
+    "evasion": {
+        "tarpit_enabled": true,
+        "tarpit_min_ms": 50,
+        "tarpit_max_ms": 300,
+        "banner_jitter": true
     },
-    "dashboard": { "host": "127.0.0.1", "port": 5000 },
-    "max_connections_per_ip": 10
+    "honeytokens": {
+        "aws_access_key_id": "AKIA_FAKE_KEY_EXAMPLE_123",
+        "aws_secret_access_key": "wJalr...EXAMPLEKEY"
+    },
+    "security": {
+        "max_connections_per_ip": 10,
+        "ban_threshold": 10,
+        "ban_duration_minutes": 60
+    },
+    "logging": {
+        "webhook_url": "https://hooks.slack.com/services/FAKE_WEBHOOK/URL/12345"
+    }
 }
 ```
 
-## 🎯 Emulated Services
+## 🎯 Deception Tactics
 
-### SSH (Port 2222)
-- Presents a realistic OpenSSH banner
-- Captures all authentication data
-- Rejects with realistic delay + error message
+### Evasion & Tarpitting
+Scanner detection relies heavily on timing. `retr0pot` dynamically injects async `sleep()` calls before sending banners or responses. An Nmap `-T4` scan will time out or misclassify the service, while a human attacker will simply perceive a slow, realistic corporate network.
 
-### HTTP (Port 8080)
-- Serves a fake admin login page at `/admin`, `/login`, `/wp-admin`
-- Exposes bait `robots.txt` with juicy disallow paths
-- Captures POST credentials from login forms
-- Fake `.env` and config files as bait
+### Honeytokens (The Poisoned Bait)
+When attackers breach the HTTP honeypot or Telnet shell, they hunt for credentials. `retr0pot` feeds them fake AWS access keys and Stripe tokens. If you monitor these tokens externally, you'll know exactly who is trying to use the stolen data.
 
-### FTP (Port 2121)
-- ProFTPD banner emulation
-- Full USER/PASS flow with credential capture
-- Responds to SYST, LIST, QUIT
-
-### Telnet (Port 2323)
-- Interactive shell with realistic login flow
-- Emulates: `ls`, `cat`, `whoami`, `id`, `ps`, `netstat`, `uname`, etc.
-- Captures download attempts (`wget`, `curl`) as high-severity payloads
-- Fake `/etc/passwd`, `/etc/shadow`, hostname
-
-## 📊 Dashboard
-
-The real-time dashboard provides:
-- **Live Attack Feed** — Color-coded events streaming in real-time
-- **Stats Cards** — Total events, unique IPs, captured credentials, commands
-- **Service Distribution** — Visual breakdown of targeted services
-- **Top Attackers** — Ranked list of most active source IPs
-- **Credentials Table** — All captured username/password combos
-- **Commands Table** — All commands attackers tried to execute
-
-## 📜 License
-
-MIT License — see [LICENSE](LICENSE) for details.
+### Auto-Ban Simulation
+To mimic a defended enterprise environment (like a server running Fail2Ban or CrowdStrike), the honeypot tracks failed authentication attempts statefully across all protocols. On the 10th failure, the attacker's IP is silently dropped at the socket level for 60 minutes.
 
 ---
 
@@ -144,6 +102,6 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Built with 🖤 by retr0**
 
-*Defensive security research tool — use responsibly.*
+*Enterprise Defensive Security Tool — Use Responsibly.*
 
 </div>

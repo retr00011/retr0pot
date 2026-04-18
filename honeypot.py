@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════╗
-║              retr0pot — Multi-Service Honeypot        ║
+║              retr0pot — Enterprise Honeypot           ║
 ║                   by retr0                            ║
 ║                                                       ║
-║  Emulates SSH, HTTP, FTP, Telnet services to          ║
-║  capture and log attacker activity in real-time.      ║
+║  Features: SIEM Webhooks, Evasion (Tarpit/Jitter),    ║
+║  Honeytokens, Fail2Ban emulation, and stealth logging ║
 ╚══════════════════════════════════════════════════════╝
 """
 
@@ -13,10 +13,11 @@ import asyncio
 import json
 import os
 import sys
-import signal
 import datetime
 import hashlib
 import logging
+import random
+import urllib.request
 from pathlib import Path
 from collections import defaultdict
 
@@ -29,6 +30,53 @@ def load_config():
         return json.load(f)
 
 CONFIG = load_config()
+
+# ─── Security & Evasion ──────────────────────────────────────
+banned_ips = {}
+failed_attempts = defaultdict(int)
+connection_counts = defaultdict(int)
+
+def check_ip_allowed(ip: str) -> bool:
+    if ip in banned_ips:
+        if datetime.datetime.now() < banned_ips[ip]:
+            return False
+        else:
+            del banned_ips[ip] # Ban expired
+    
+    max_conn = CONFIG.get("security", {}).get("max_connections_per_ip", 10)
+    if connection_counts[ip] >= max_conn:
+        return False
+        
+    connection_counts[ip] += 1
+    return True
+
+def register_failure(ip: str):
+    threshold = CONFIG.get("security", {}).get("ban_threshold", 10)
+    failed_attempts[ip] += 1
+    if failed_attempts[ip] >= threshold:
+        ban_mins = CONFIG.get("security", {}).get("ban_duration_minutes", 60)
+        banned_ips[ip] = datetime.datetime.now() + datetime.timedelta(minutes=ban_mins)
+        logger.warning(f"\033[31m[!] Fail2Ban triggered: Banning {ip} for {ban_mins}m\033[0m")
+        return True
+    return False
+
+def release_connection(ip: str):
+    if connection_counts[ip] > 0:
+        connection_counts[ip] -= 1
+
+async def tarpit():
+    if CONFIG.get("evasion", {}).get("tarpit_enabled", True):
+        min_ms = CONFIG["evasion"]["tarpit_min_ms"]
+        max_ms = CONFIG["evasion"]["tarpit_max_ms"]
+        await asyncio.sleep(random.uniform(min_ms / 1000.0, max_ms / 1000.0))
+
+def get_jittered_banner(base_banner: str) -> str:
+    if not CONFIG.get("evasion", {}).get("banner_jitter", True):
+        return base_banner
+    # Add subtle variations to bypass strict Nmap signatures
+    if random.random() > 0.7:
+        return base_banner + " "
+    return base_banner
 
 # ─── Logging Setup ───────────────────────────────────────────
 LOG_DIR.mkdir(exist_ok=True)
@@ -44,20 +92,15 @@ logger.addHandler(handler)
 
 # ─── Event Logger ────────────────────────────────────────────
 class EventLogger:
-    """Logs all honeypot events to structured JSON files."""
-
     def __init__(self, log_dir: Path):
         self.log_dir = log_dir
-        self.log_dir.mkdir(exist_ok=True)
         self.events = []
         self._lock = asyncio.Lock()
+        self.webhook_url = CONFIG.get("logging", {}).get("webhook_url", "")
 
-    async def log_event(self, event_type: str, service: str, 
-                         src_ip: str, src_port: int, data: dict = None):
+    async def log_event(self, event_type: str, service: str, src_ip: str, src_port: int, data: dict = None):
         event = {
-            "id": hashlib.md5(
-                f"{datetime.datetime.now().isoformat()}{src_ip}{src_port}".encode()
-            ).hexdigest()[:12],
+            "id": hashlib.md5(f"{datetime.datetime.now().isoformat()}{src_ip}{src_port}".encode()).hexdigest()[:12],
             "timestamp": datetime.datetime.now().isoformat(),
             "type": event_type,
             "service": service,
@@ -68,96 +111,42 @@ class EventLogger:
 
         async with self._lock:
             self.events.append(event)
-
-            # Write to daily log file
             date_str = datetime.date.today().strftime("%Y-%m-%d")
             log_file = self.log_dir / f"events_{date_str}.json"
-
+            
             existing = []
             if log_file.exists():
                 try:
-                    with open(log_file, "r") as f:
-                        existing = json.load(f)
-                except (json.JSONDecodeError, FileNotFoundError):
-                    existing = []
-
+                    with open(log_file, "r") as f: existing = json.load(f)
+                except: pass
+            
             existing.append(event)
             with open(log_file, "w") as f:
                 json.dump(existing, f, indent=2)
 
-        severity_colors = {
-            "connection": "\033[36m",      # cyan
-            "auth_attempt": "\033[33m",    # yellow
-            "command": "\033[31m",         # red
-            "payload": "\033[35m",         # magenta
-            "scan": "\033[34m",            # blue
-            "disconnect": "\033[90m",      # gray
-        }
-        color = severity_colors.get(event_type, "\033[37m")
-        reset = "\033[0m"
+        # SIEM / Webhook Integration
+        if self.webhook_url and event_type in ["auth_attempt", "command", "payload"]:
+            asyncio.ensure_future(self._send_webhook(event))
 
-        logger.info(
-            f"{color}▌ {event_type.upper():15s}{reset} │ "
-            f"{service:7s} │ {src_ip}:{src_port} │ "
-            f"{json.dumps(data) if data else ''}"
-        )
-
+        # Console logging
+        colors = {"connection": "\033[36m", "auth_attempt": "\033[33m", "command": "\033[31m", "payload": "\033[35m", "scan": "\033[34m", "disconnect": "\033[90m"}
+        color = colors.get(event_type, "\033[37m")
+        logger.info(f"{color}▌ {event_type.upper():15s}\033[0m │ {service:7s} │ {src_ip}:{src_port} │ {json.dumps(data) if data else ''}")
         return event
 
-    def get_recent_events(self, limit=100):
-        return self.events[-limit:]
-
-    def get_stats(self):
-        stats = {
-            "total_events": len(self.events),
-            "by_service": defaultdict(int),
-            "by_type": defaultdict(int),
-            "top_ips": defaultdict(int),
-            "credentials": [],
-            "commands": []
-        }
-        for e in self.events:
-            stats["by_service"][e["service"]] += 1
-            stats["by_type"][e["type"]] += 1
-            stats["top_ips"][e["src_ip"]] += 1
-            if e["type"] == "auth_attempt":
-                stats["credentials"].append({
-                    "ip": e["src_ip"],
-                    "service": e["service"],
-                    "data": e["data"],
-                    "time": e["timestamp"]
-                })
-            if e["type"] == "command":
-                stats["commands"].append({
-                    "ip": e["src_ip"],
-                    "cmd": e["data"].get("command", ""),
-                    "time": e["timestamp"]
-                })
-
-        stats["by_service"] = dict(stats["by_service"])
-        stats["by_type"] = dict(stats["by_type"])
-        stats["top_ips"] = dict(
-            sorted(stats["top_ips"].items(), key=lambda x: x[1], reverse=True)[:20]
-        )
-        return stats
-
+    async def _send_webhook(self, event):
+        try:
+            req = urllib.request.Request(
+                self.webhook_url, 
+                data=json.dumps(event).encode('utf-8'),
+                headers={'Content-Type': 'application/json'}
+            )
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, urllib.request.urlopen, req)
+        except Exception:
+            pass
 
 event_logger = EventLogger(LOG_DIR)
-
-# ─── Connection Tracker ──────────────────────────────────────
-connection_counts = defaultdict(int)
-
-def check_rate_limit(ip: str) -> bool:
-    max_conn = CONFIG.get("max_connections_per_ip", 10)
-    if connection_counts[ip] >= max_conn:
-        return False
-    connection_counts[ip] += 1
-    return True
-
-def release_connection(ip: str):
-    if connection_counts[ip] > 0:
-        connection_counts[ip] -= 1
-
 
 # ═══════════════════════════════════════════════════════════════
 #  SERVICE EMULATORS
@@ -165,85 +154,51 @@ def release_connection(ip: str):
 
 # ─── SSH Honeypot ─────────────────────────────────────────────
 class SSHHoneypot(asyncio.Protocol):
-    """Fake SSH server that captures authentication attempts."""
-
     def __init__(self):
         self.transport = None
         self.peer = None
-        self.buffer = b""
 
     def connection_made(self, transport):
         self.transport = transport
         self.peer = transport.get_extra_info("peername")
-        if not check_rate_limit(self.peer[0]):
+        if not check_ip_allowed(self.peer[0]):
             transport.close()
             return
 
-        banner = CONFIG["services"]["ssh"]["banner"]
-        transport.write(f"{banner}\r\n".encode())
-        asyncio.ensure_future(
-            event_logger.log_event("connection", "SSH", self.peer[0], self.peer[1])
-        )
+        asyncio.ensure_future(self._send_banner())
+
+    async def _send_banner(self):
+        await tarpit()
+        banner = get_jittered_banner(CONFIG["services"]["ssh"]["banner"])
+        if self.transport and not self.transport.is_closing():
+            self.transport.write(f"{banner}\r\n".encode())
+            await event_logger.log_event("connection", "SSH", self.peer[0], self.peer[1])
 
     def data_received(self, data):
-        self.buffer += data
-        try:
-            decoded = data.decode("utf-8", errors="replace").strip()
-        except Exception:
-            decoded = repr(data)
+        try: decoded = data.decode("utf-8", errors="replace").strip()
+        except Exception: decoded = repr(data)
 
-        # Capture anything that looks like auth data
         if decoded:
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "auth_attempt", "SSH", self.peer[0], self.peer[1],
-                    {"raw_data": decoded[:500], "bytes": len(data)}
-                )
-            )
+            asyncio.ensure_future(event_logger.log_event("auth_attempt", "SSH", self.peer[0], self.peer[1], {"raw_data": decoded[:500]}))
+            if register_failure(self.peer[0]):
+                self.transport.close()
+                return
 
-        # Always reject with a fake delay
         async def delayed_reject():
-            await asyncio.sleep(0.5)
+            await tarpit()
             if self.transport and not self.transport.is_closing():
                 self.transport.write(b"Permission denied (publickey,password).\r\n")
-
         asyncio.ensure_future(delayed_reject())
 
     def connection_lost(self, exc):
         if self.peer:
             release_connection(self.peer[0])
-            asyncio.ensure_future(
-                event_logger.log_event("disconnect", "SSH", self.peer[0], self.peer[1])
-            )
-
+            asyncio.ensure_future(event_logger.log_event("disconnect", "SSH", self.peer[0], self.peer[1]))
 
 # ─── HTTP Honeypot ────────────────────────────────────────────
 class HTTPHoneypot(asyncio.Protocol):
-    """Fake HTTP server that logs requests and serves bait pages."""
-
-    FAKE_LOGIN_PAGE = """<!DOCTYPE html>
-<html>
-<head><title>Admin Panel - Login</title></head>
-<body style="font-family:Arial;background:#1a1a2e;color:#eee;display:flex;justify-content:center;align-items:center;height:100vh;margin:0">
-<div style="background:#16213e;padding:40px;border-radius:12px;box-shadow:0 0 30px rgba(0,0,0,0.5)">
-<h2 style="color:#e94560;text-align:center">⚡ Admin Panel</h2>
-<form method="POST" action="/login">
-<input type="text" name="username" placeholder="Username" style="display:block;width:250px;padding:10px;margin:10px 0;background:#0f3460;border:1px solid #e94560;color:#eee;border-radius:6px"><br>
-<input type="password" name="password" placeholder="Password" style="display:block;width:250px;padding:10px;margin:10px 0;background:#0f3460;border:1px solid #e94560;color:#eee;border-radius:6px"><br>
-<button type="submit" style="width:270px;padding:12px;background:#e94560;border:none;color:#fff;border-radius:6px;cursor:pointer;font-weight:bold">Sign In</button>
-</form>
-</div>
-</body>
-</html>"""
-
-    ROBOTS_TXT = """User-agent: *
-Disallow: /admin/
-Disallow: /config/
-Disallow: /backup/
-Disallow: /api/keys/
-Disallow: /.env
-"""
-
+    FAKE_LOGIN_PAGE = """<!DOCTYPE html><html><head><title>Admin Panel</title></head><body style="background:#1a1a2e;color:#eee;display:flex;justify-content:center;align-items:center;height:100vh;margin:0"><form method="POST" action="/login" style="background:#16213e;padding:40px;border-radius:12px;"><h2 style="color:#e94560">⚡ Admin Login</h2><input type="text" name="user" placeholder="User" style="display:block;margin:10px 0;padding:8px;"><input type="password" name="pass" placeholder="Pass" style="display:block;margin:10px 0;padding:8px;"><button type="submit">Login</button></form></body></html>"""
+    
     def __init__(self):
         self.transport = None
         self.peer = None
@@ -251,223 +206,103 @@ Disallow: /.env
     def connection_made(self, transport):
         self.transport = transport
         self.peer = transport.get_extra_info("peername")
-        if not check_rate_limit(self.peer[0]):
+        if not check_ip_allowed(self.peer[0]):
             transport.close()
             return
-        asyncio.ensure_future(
-            event_logger.log_event("connection", "HTTP", self.peer[0], self.peer[1])
-        )
+        asyncio.ensure_future(event_logger.log_event("connection", "HTTP", self.peer[0], self.peer[1]))
 
     def data_received(self, data):
-        try:
-            request = data.decode("utf-8", errors="replace")
-        except Exception:
-            request = repr(data)
+        asyncio.ensure_future(self._handle_request(data))
+
+    async def _handle_request(self, data):
+        await tarpit()
+        try: request = data.decode("utf-8", errors="replace")
+        except: request = repr(data)
 
         lines = request.split("\r\n")
         request_line = lines[0] if lines else ""
         method = request_line.split(" ")[0] if request_line else "?"
         path = request_line.split(" ")[1] if len(request_line.split(" ")) > 1 else "/"
 
-        # Extract headers
-        headers = {}
-        body = ""
-        header_done = False
+        headers, body, header_done = {}, "", False
         for line in lines[1:]:
-            if line == "":
-                header_done = True
-                continue
+            if line == "": header_done = True; continue
             if not header_done:
-                if ": " in line:
-                    key, val = line.split(": ", 1)
-                    headers[key.lower()] = val
-            else:
-                body += line
+                if ": " in line: k, v = line.split(": ", 1); headers[k.lower()] = v
+            else: body += line
 
-        event_data = {
-            "method": method,
-            "path": path,
-            "user_agent": headers.get("user-agent", "unknown"),
-            "headers": dict(list(headers.items())[:10]),
-        }
+        event_data = {"method": method, "path": path, "user_agent": headers.get("user-agent", "unknown")}
 
-        # Log POST body (credential captures)
         if method == "POST" and body:
-            event_data["post_body"] = body[:1000]
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "auth_attempt", "HTTP", self.peer[0], self.peer[1], event_data
-                )
-            )
+            event_data["post_body"] = body[:500]
+            await event_logger.log_event("auth_attempt", "HTTP", self.peer[0], self.peer[1], event_data)
+            register_failure(self.peer[0])
         else:
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "scan", "HTTP", self.peer[0], self.peer[1], event_data
-                )
-            )
+            await event_logger.log_event("scan", "HTTP", self.peer[0], self.peer[1], event_data)
 
-        # Serve responses based on path
-        server_header = CONFIG["services"]["http"]["server_header"]
+        # Honeytokens Generation
+        ht = CONFIG.get("honeytokens", {})
+        fake_env = f"DB_HOST=127.0.0.1\nAWS_ACCESS_KEY_ID={ht.get('aws_access_key_id')}\nAWS_SECRET_ACCESS_KEY={ht.get('aws_secret_access_key')}\nSTRIPE_KEY={ht.get('stripe_key')}\n"
 
-        if path == "/robots.txt":
-            response_body = self.ROBOTS_TXT
-            content_type = "text/plain"
-        elif path in ("/admin", "/admin/", "/login", "/wp-admin", "/wp-login.php",
-                       "/phpmyadmin", "/administrator"):
-            response_body = self.FAKE_LOGIN_PAGE
-            content_type = "text/html"
-        elif path in ("/.env", "/config", "/.git/config", "/api/keys"):
-            # Bait sensitive-looking files
-            response_body = 'DB_HOST=internal-db.corp.local\nDB_USER=admin\nDB_PASS=Ch4ng3M3!\nAPI_KEY=sk-fake-retr0pot-honeypot-key\n'
-            content_type = "text/plain"
+        if path in ("/.env", "/config", "/api/keys"):
+            body_res, ctype = fake_env, "text/plain"
+        elif path == "/robots.txt":
+            body_res, ctype = "User-agent: *\nDisallow: /admin/\nDisallow: /.env\n", "text/plain"
         else:
-            response_body = self.FAKE_LOGIN_PAGE
-            content_type = "text/html"
+            body_res, ctype = self.FAKE_LOGIN_PAGE, "text/html"
 
-        response = (
-            f"HTTP/1.1 200 OK\r\n"
-            f"Server: {server_header}\r\n"
-            f"Content-Type: {content_type}\r\n"
-            f"Content-Length: {len(response_body)}\r\n"
-            f"X-Powered-By: PHP/8.1.2\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{response_body}"
-        )
-        self.transport.write(response.encode())
-        self.transport.close()
-
-    def connection_lost(self, exc):
-        if self.peer:
-            release_connection(self.peer[0])
-
-
-# ─── FTP Honeypot ─────────────────────────────────────────────
-class FTPHoneypot(asyncio.Protocol):
-    """Fake FTP server that captures login credentials."""
-
-    def __init__(self):
-        self.transport = None
-        self.peer = None
-        self.username = None
-        self.state = "WAIT_USER"
-
-    def connection_made(self, transport):
-        self.transport = transport
-        self.peer = transport.get_extra_info("peername")
-        if not check_rate_limit(self.peer[0]):
-            transport.close()
-            return
-
-        banner = CONFIG["services"]["ftp"]["banner"]
-        transport.write(f"{banner}\r\n".encode())
-        asyncio.ensure_future(
-            event_logger.log_event("connection", "FTP", self.peer[0], self.peer[1])
-        )
-
-    def data_received(self, data):
-        try:
-            cmd = data.decode("utf-8", errors="replace").strip()
-        except Exception:
-            return
-
-        parts = cmd.split(" ", 1)
-        command = parts[0].upper()
-        arg = parts[1] if len(parts) > 1 else ""
-
-        if command == "USER":
-            self.username = arg
-            self.state = "WAIT_PASS"
-            self.transport.write(b"331 Password required.\r\n")
-
-        elif command == "PASS":
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "auth_attempt", "FTP", self.peer[0], self.peer[1],
-                    {"username": self.username or "unknown", "password": arg}
-                )
-            )
-            # Always reject after a realistic delay
-            async def reject():
-                await asyncio.sleep(0.3)
-                if self.transport and not self.transport.is_closing():
-                    self.transport.write(b"530 Login incorrect.\r\n")
-                    self.state = "WAIT_USER"
-            asyncio.ensure_future(reject())
-
-        elif command == "QUIT":
-            self.transport.write(b"221 Goodbye.\r\n")
+        server = get_jittered_banner(CONFIG["services"]["http"]["server_header"])
+        resp = f"HTTP/1.1 200 OK\r\nServer: {server}\r\nContent-Type: {ctype}\r\nContent-Length: {len(body_res)}\r\nConnection: close\r\n\r\n{body_res}"
+        
+        if self.transport and not self.transport.is_closing():
+            self.transport.write(resp.encode())
             self.transport.close()
 
-        elif command == "SYST":
-            self.transport.write(b"215 UNIX Type: L8\r\n")
-
-        elif command == "LIST":
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "command", "FTP", self.peer[0], self.peer[1],
-                    {"command": cmd}
-                )
-            )
-            self.transport.write(b"150 Opening data connection.\r\n")
-            self.transport.write(b"226 Transfer complete.\r\n")
-
-        else:
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "command", "FTP", self.peer[0], self.peer[1],
-                    {"command": cmd}
-                )
-            )
-            self.transport.write(b"502 Command not implemented.\r\n")
-
     def connection_lost(self, exc):
-        if self.peer:
-            release_connection(self.peer[0])
-            asyncio.ensure_future(
-                event_logger.log_event("disconnect", "FTP", self.peer[0], self.peer[1])
-            )
+        if self.peer: release_connection(self.peer[0])
 
-
-# ─── Telnet Honeypot ──────────────────────────────────────────
+# ─── Telnet / Fake Linux Honeypot ─────────────────────────────
 class TelnetHoneypot(asyncio.Protocol):
-    """Fake Telnet server with interactive shell emulation."""
-
-    FAKE_FS = {
-        "/etc/passwd": "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n",
-        "/etc/shadow": "root:$6$fake$hashedpassword:19000:0:99999:7:::\n",
-        "/etc/hostname": "webserver-prod-01\n",
-    }
-
     def __init__(self):
         self.transport = None
         self.peer = None
         self.state = "LOGIN_USER"
         self.username = None
-        self.authenticated = False
         self.cwd = "/root"
+        
+        # Fake File System
+        ht = CONFIG.get("honeytokens", {})
+        self.fs = {
+            "/etc/passwd": "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n",
+            "/proc/cpuinfo": "processor\t: 0\nvendor_id\t: GenuineIntel\ncpu family\t: 6\nmodel\t\t: 85\nmodel name\t: Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz\n",
+            "/proc/meminfo": "MemTotal:       16393292 kB\nMemFree:         8123492 kB\nMemAvailable:   12102144 kB\n",
+            "/.dockerenv": "",
+            "/root/.aws/credentials": f"[default]\naws_access_key_id = {ht.get('aws_access_key_id')}\naws_secret_access_key = {ht.get('aws_secret_access_key')}\n"
+        }
 
     def connection_made(self, transport):
         self.transport = transport
         self.peer = transport.get_extra_info("peername")
-        if not check_rate_limit(self.peer[0]):
+        if not check_ip_allowed(self.peer[0]):
             transport.close()
             return
+        asyncio.ensure_future(self._send_banner())
 
-        banner = CONFIG["services"]["telnet"]["banner"]
-        transport.write(f"\r\n{banner}\r\n\r\nlogin: ".encode())
-        asyncio.ensure_future(
-            event_logger.log_event("connection", "Telnet", self.peer[0], self.peer[1])
-        )
+    async def _send_banner(self):
+        await tarpit()
+        banner = get_jittered_banner(CONFIG["services"]["telnet"]["banner"])
+        if self.transport and not self.transport.is_closing():
+            self.transport.write(f"\r\n{banner}\r\n\r\nlogin: ".encode())
+            await event_logger.log_event("connection", "Telnet", self.peer[0], self.peer[1])
 
     def data_received(self, data):
-        try:
-            cmd = data.decode("utf-8", errors="replace").strip()
-        except Exception:
-            return
+        asyncio.ensure_future(self._handle_input(data))
 
-        if not cmd:
-            return
+    async def _handle_input(self, data):
+        await tarpit()
+        try: cmd = data.decode("utf-8", errors="replace").strip()
+        except: return
+        if not cmd: return
 
         if self.state == "LOGIN_USER":
             self.username = cmd
@@ -476,213 +311,111 @@ class TelnetHoneypot(asyncio.Protocol):
             return
 
         if self.state == "LOGIN_PASS":
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "auth_attempt", "Telnet", self.peer[0], self.peer[1],
-                    {"username": self.username, "password": cmd}
-                )
-            )
-            # Always "authenticate" to capture more commands
-            self.authenticated = True
+            await event_logger.log_event("auth_attempt", "Telnet", self.peer[0], self.peer[1], {"username": self.username, "password": cmd})
             self.state = "SHELL"
-            self.transport.write(
-                f"\r\nWelcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\r\n"
-                f"\r\nLast login: {datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Y')} from 10.0.0.1\r\n"
-                f"\r\n{self.username}@webserver-prod-01:{self.cwd}$ ".encode()
-            )
+            self.transport.write(f"\r\nLast login: {datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Y')} from 10.0.0.1\r\n\r\n{self.username}@webserver-prod-01:{self.cwd}# ".encode())
             return
 
         if self.state == "SHELL":
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "command", "Telnet", self.peer[0], self.peer[1],
-                    {"command": cmd, "cwd": self.cwd}
-                )
-            )
-            response = self._emulate_command(cmd)
-            self.transport.write(
-                f"{response}\r\n{self.username}@webserver-prod-01:{self.cwd}$ ".encode()
-            )
+            await event_logger.log_event("command", "Telnet", self.peer[0], self.peer[1], {"command": cmd, "cwd": self.cwd})
+            res = self._emulate(cmd)
+            if self.transport and not self.transport.is_closing():
+                if res: self.transport.write(f"{res}\r\n".encode())
+                self.transport.write(f"{self.username}@webserver-prod-01:{self.cwd}# ".encode())
 
-    def _emulate_command(self, cmd):
-        """Emulate common shell commands with realistic output."""
+    def _emulate(self, cmd):
         parts = cmd.split()
-        if not parts:
+        b = parts[0]
+        
+        if b in ("ls", "dir"): return "Desktop  Documents  .bash_history  .ssh  .aws  backup.tar.gz" if self.cwd == "/root" else "bin boot dev etc home lib opt proc root sys tmp usr var"
+        elif b == "pwd": return self.cwd
+        elif b == "cd": 
+            if len(parts) > 1: self.cwd = parts[1] if parts[1].startswith("/") else f"{self.cwd}/{parts[1]}"
             return ""
-
-        binary = parts[0]
-
-        if binary in ("ls", "dir"):
-            if self.cwd == "/root":
-                return "Desktop  Documents  .bash_history  .ssh  backup.tar.gz"
-            return "bin  boot  dev  etc  home  lib  opt  proc  root  tmp  usr  var"
-
-        elif binary == "pwd":
-            return self.cwd
-
-        elif binary == "cd":
-            if len(parts) > 1:
-                self.cwd = parts[1] if parts[1].startswith("/") else f"{self.cwd}/{parts[1]}"
+        elif b == "whoami": return self.username or "root"
+        elif b == "cat":
+            if len(parts) > 1: return self.fs.get(parts[1], f"cat: {parts[1]}: No such file or directory")
             return ""
-
-        elif binary == "whoami":
-            return self.username or "root"
-
-        elif binary == "id":
-            return "uid=0(root) gid=0(root) groups=0(root)"
-
-        elif binary == "uname":
-            return "Linux webserver-prod-01 5.15.0-91-generic #101-Ubuntu SMP x86_64 GNU/Linux"
-
-        elif binary == "cat":
-            if len(parts) > 1:
-                path = parts[1]
-                if path in self.FAKE_FS:
-                    return self.FAKE_FS[path]
-                return f"cat: {path}: No such file or directory"
-            return ""
-
-        elif binary == "wget" or binary == "curl":
-            asyncio.ensure_future(
-                event_logger.log_event(
-                    "payload", "Telnet", self.peer[0], self.peer[1],
-                    {"command": cmd, "type": "download_attempt"}
-                )
-            )
-            return f"{binary}: connection timed out"
-
-        elif binary == "exit" or binary == "logout":
-            self.transport.write(b"logout\r\n")
+        elif b in ("wget", "curl", "nc", "bash", "sh"):
+            asyncio.ensure_future(event_logger.log_event("payload", "Telnet", self.peer[0], self.peer[1], {"command": cmd, "type": "download_execute_attempt"}))
+            return f"{b}: command not found" if random.random() > 0.5 else f"{b}: connection timed out"
+        elif b == "ps":
+            return f"  PID TTY          TIME CMD\n    1 ?        00:00:03 systemd\n  412 ?        00:00:01 sshd\n {random.randint(1000,9000)} pts/0    00:00:00 bash\n {random.randint(9001,9999)} pts/0    00:00:00 ps"
+        elif b == "exit":
             self.transport.close()
-            return ""
-
-        elif binary == "ifconfig" or binary == "ip":
-            return "eth0: inet 192.168.1.100 netmask 255.255.255.0 broadcast 192.168.1.255"
-
-        elif binary == "ps":
-            return (
-                "  PID TTY          TIME CMD\n"
-                "    1 ?        00:00:03 systemd\n"
-                "  412 ?        00:00:01 sshd\n"
-                "  523 ?        00:00:00 apache2\n"
-                " 1024 pts/0    00:00:00 bash\n"
-                " 1337 pts/0    00:00:00 ps"
-            )
-
-        elif binary == "netstat" or binary == "ss":
-            return (
-                "Active Internet connections\n"
-                "Proto  Local Address    Foreign Address    State\n"
-                "tcp    0.0.0.0:22       0.0.0.0:*          LISTEN\n"
-                "tcp    0.0.0.0:80       0.0.0.0:*          LISTEN\n"
-                "tcp    0.0.0.0:3306     0.0.0.0:*          LISTEN"
-            )
-
-        else:
-            return f"-bash: {binary}: command not found"
+            return "logout"
+        return f"-bash: {b}: command not found"
 
     def connection_lost(self, exc):
-        if self.peer:
-            release_connection(self.peer[0])
-            asyncio.ensure_future(
-                event_logger.log_event("disconnect", "Telnet", self.peer[0], self.peer[1])
-            )
+        if self.peer: release_connection(self.peer[0])
 
+# ─── FTP Honeypot ─────────────────────────────────────────────
+class FTPHoneypot(asyncio.Protocol):
+    def __init__(self):
+        self.transport = None; self.peer = None; self.username = None
+
+    def connection_made(self, transport):
+        self.transport = transport
+        self.peer = transport.get_extra_info("peername")
+        if not check_ip_allowed(self.peer[0]):
+            transport.close()
+            return
+        asyncio.ensure_future(self._send_banner())
+
+    async def _send_banner(self):
+        await tarpit()
+        banner = get_jittered_banner(CONFIG["services"]["ftp"]["banner"])
+        if self.transport and not self.transport.is_closing():
+            self.transport.write(f"{banner}\r\n".encode())
+
+    def data_received(self, data):
+        asyncio.ensure_future(self._handle(data))
+
+    async def _handle(self, data):
+        await tarpit()
+        try: cmd = data.decode("utf-8").strip()
+        except: return
+        
+        parts = cmd.split(" ", 1); c = parts[0].upper(); arg = parts[1] if len(parts) > 1 else ""
+        if c == "USER":
+            self.username = arg; self.transport.write(b"331 Password required.\r\n")
+        elif c == "PASS":
+            await event_logger.log_event("auth_attempt", "FTP", self.peer[0], self.peer[1], {"username": self.username, "password": arg})
+            register_failure(self.peer[0])
+            self.transport.write(b"530 Login incorrect.\r\n")
+        elif c == "QUIT": self.transport.write(b"221 Goodbye.\r\n"); self.transport.close()
+        else:
+            await event_logger.log_event("command", "FTP", self.peer[0], self.peer[1], {"command": cmd})
+            self.transport.write(b"502 Command not implemented.\r\n")
+
+    def connection_lost(self, exc):
+        if self.peer: release_connection(self.peer[0])
 
 # ═══════════════════════════════════════════════════════════════
-#  MAIN — Boot all services
+#  MAIN BOOT
 # ═══════════════════════════════════════════════════════════════
-
-BANNER = """
-\033[38;5;196m
-  ██▀███  ▓█████▄▄▄█████▓ ██▀███   ▒█████   ██▓███   ▒█████  ▄▄▄█████▓
- ▓██ ▒ ██▒▓█   ▀▓  ██▒ ▓▒▓██ ▒ ██▒▒██▒  ██▒▓██░  ██▒▒██▒  ██▒▓  ██▒ ▓▒
- ▓██ ░▄█ ▒▒███  ▒ ▓██░ ▒░▓██ ░▄█ ▒▒██░  ██▒▓██░ ██▓▒▒██░  ██▒▒ ▓██░ ▒░
- ▒██▀▀█▄  ▒▓█  ▄░ ▓██▓ ░ ▒██▀▀█▄  ▒██   ██░▒██▄█▓▒ ▒▒██   ██░░ ▓██▓ ░ 
- ░██▓ ▒██▒░▒████▒ ▒██▒ ░ ░██▓ ▒██▒░ ████▓▒░▒██▒ ░  ░░ ████▓▒░  ▒██▒ ░ 
- ░ ▒▓ ░▒▓░░░ ▒░ ░ ▒ ░░   ░ ▒▓ ░▒▓░░ ▒░▒░▒░ ▒▓▒░ ░  ░░ ▒░▒░▒░  ▒ ░░   
-   ░▒ ░ ▒░ ░ ░  ░   ░      ░▒ ░ ▒░  ░ ▒ ▒░ ░▒ ░       ░ ▒ ▒░    ░    
-   ░░   ░    ░    ░        ░░   ░ ░ ░ ░ ▒  ░░       ░ ░ ░ ▒   ░      
-    ░        ░  ░            ░         ░ ░               ░ ░           
-\033[0m
-\033[38;5;208m    ╔══════════════════════════════════════════════════╗
-    ║  retr0pot v1.0 — Multi-Service Honeypot          ║
-    ║  Author: retr0                                    ║
-    ║  Defensive Security Research Tool                 ║
-    ╚══════════════════════════════════════════════════╝\033[0m
-"""
-
 async def main():
-    print(BANNER)
+    print(f"\033[38;5;196m  retr0pot Enterprise v2.0 — SIEM & Deception Enabled\033[0m")
     loop = asyncio.get_event_loop()
     servers = []
 
-    services_config = CONFIG["services"]
+    for name, proto in [("ssh", SSHHoneypot), ("http", HTTPHoneypot), ("ftp", FTPHoneypot), ("telnet", TelnetHoneypot)]:
+        if CONFIG["services"][name]["enabled"]:
+            port = CONFIG["services"][name]["port"]
+            try:
+                srv = await loop.create_server(proto, "0.0.0.0", port)
+                servers.append(srv)
+                logger.info(f"\033[32m✔ {name.upper()} listening on {port}\033[0m")
+            except Exception as e:
+                logger.error(f"\033[31m✘ {name.upper()} port {port}: {e}\033[0m")
 
-    # ── SSH ──
-    if services_config["ssh"]["enabled"]:
-        port = services_config["ssh"]["port"]
-        try:
-            srv = await loop.create_server(SSHHoneypot, "0.0.0.0", port)
-            servers.append(srv)
-            logger.info(f"\033[32m✔ SSH honeypot listening on port {port}\033[0m")
-        except PermissionError:
-            logger.error(f"\033[31m✘ Cannot bind SSH to port {port} (need root?)\033[0m")
-        except OSError as e:
-            logger.error(f"\033[31m✘ SSH port {port}: {e}\033[0m")
-
-    # ── HTTP ──
-    if services_config["http"]["enabled"]:
-        port = services_config["http"]["port"]
-        try:
-            srv = await loop.create_server(HTTPHoneypot, "0.0.0.0", port)
-            servers.append(srv)
-            logger.info(f"\033[32m✔ HTTP honeypot listening on port {port}\033[0m")
-        except OSError as e:
-            logger.error(f"\033[31m✘ HTTP port {port}: {e}\033[0m")
-
-    # ── FTP ──
-    if services_config["ftp"]["enabled"]:
-        port = services_config["ftp"]["port"]
-        try:
-            srv = await loop.create_server(FTPHoneypot, "0.0.0.0", port)
-            servers.append(srv)
-            logger.info(f"\033[32m✔ FTP honeypot listening on port {port}\033[0m")
-        except OSError as e:
-            logger.error(f"\033[31m✘ FTP port {port}: {e}\033[0m")
-
-    # ── Telnet ──
-    if services_config["telnet"]["enabled"]:
-        port = services_config["telnet"]["port"]
-        try:
-            srv = await loop.create_server(TelnetHoneypot, "0.0.0.0", port)
-            servers.append(srv)
-            logger.info(f"\033[32m✔ Telnet honeypot listening on port {port}\033[0m")
-        except OSError as e:
-            logger.error(f"\033[31m✘ Telnet port {port}: {e}\033[0m")
-
-    if not servers:
-        logger.error("No services started. Exiting.")
-        return
-
-    logger.info(f"\033[38;5;208m═══ retr0pot active — {len(servers)} services running ═══\033[0m")
-    logger.info(f"\033[90mLogs → {LOG_DIR.resolve()}\033[0m")
-    logger.info(f"\033[90mDashboard → http://{CONFIG['dashboard']['host']}:{CONFIG['dashboard']['port']}\033[0m")
-    logger.info(f"\033[90mPress Ctrl+C to stop\033[0m")
-
-    # Keep running
-    try:
-        await asyncio.gather(*(srv.serve_forever() for srv in servers))
-    except asyncio.CancelledError:
-        pass
-    finally:
-        for srv in servers:
-            srv.close()
-
+    logger.info(f"\033[38;5;208m═══ Active Services: {len(servers)} ═══\033[0m")
+    logger.info(f"Tarpitting: {'ON' if CONFIG['evasion']['tarpit_enabled'] else 'OFF'} | Fail2Ban: ON | Webhooks: {'ON' if CONFIG['logging']['webhook_url'] else 'OFF'}")
+    
+    try: await asyncio.gather(*(srv.serve_forever() for srv in servers))
+    except asyncio.CancelledError: pass
+    finally: [srv.close() for srv in servers]
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n\033[38;5;208m[retr0pot]\033[0m Shutting down gracefully...")
-        sys.exit(0)
+    try: asyncio.run(main())
+    except KeyboardInterrupt: sys.exit(0)
