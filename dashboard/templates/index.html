@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>retr0pot — Attack Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- ═══ Header ═══ -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo-pulse"></div>
+            <h1 class="logo">retr0<span class="accent">pot</span></h1>
+            <span class="version">v1.0</span>
+        </div>
+        <div class="header-right">
+            <div class="status-badge" id="statusBadge">
+                <span class="status-dot"></span>
+                <span>LIVE</span>
+            </div>
+            <span class="update-timer" id="updateTimer">Updated 0s ago</span>
+        </div>
+    </header>
+
+    <!-- ═══ Stats Cards ═══ -->
+    <section class="stats-grid">
+        <div class="stat-card" id="statTotal">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-info">
+                <span class="stat-value" id="totalEvents">0</span>
+                <span class="stat-label">Total Events</span>
+            </div>
+        </div>
+        <div class="stat-card" id="statIps">
+            <div class="stat-icon">🌐</div>
+            <div class="stat-info">
+                <span class="stat-value" id="uniqueIps">0</span>
+                <span class="stat-label">Unique IPs</span>
+            </div>
+        </div>
+        <div class="stat-card" id="statCreds">
+            <div class="stat-icon">🔑</div>
+            <div class="stat-info">
+                <span class="stat-value" id="totalCreds">0</span>
+                <span class="stat-label">Credentials Captured</span>
+            </div>
+        </div>
+        <div class="stat-card" id="statCmds">
+            <div class="stat-icon">💀</div>
+            <div class="stat-info">
+                <span class="stat-value" id="totalCmds">0</span>
+                <span class="stat-label">Commands Logged</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══ Main Grid ═══ -->
+    <main class="main-grid">
+
+        <!-- Live Feed -->
+        <section class="panel live-feed-panel">
+            <div class="panel-header">
+                <h2>🔴 Live Attack Feed</h2>
+                <button class="btn-clear" onclick="clearFeed()">Clear</button>
+            </div>
+            <div class="feed-container" id="liveFeed">
+                <div class="feed-empty">Waiting for connections...</div>
+            </div>
+        </section>
+
+        <!-- Right Column -->
+        <div class="right-column">
+
+            <!-- Service Distribution -->
+            <section class="panel">
+                <div class="panel-header">
+                    <h2>📊 Service Distribution</h2>
+                </div>
+                <div class="chart-container" id="serviceChart">
+                    <div class="feed-empty">No data yet</div>
+                </div>
+            </section>
+
+            <!-- Top Attackers -->
+            <section class="panel">
+                <div class="panel-header">
+                    <h2>🎯 Top Attackers</h2>
+                </div>
+                <div class="attackers-list" id="topAttackers">
+                    <div class="feed-empty">No attackers yet</div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- ═══ Bottom Grid ═══ -->
+    <section class="bottom-grid">
+        <!-- Captured Credentials -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2>🔑 Captured Credentials</h2>
+            </div>
+            <div class="table-container">
+                <table class="data-table" id="credsTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>IP</th>
+                            <th>Service</th>
+                            <th>Username</th>
+                            <th>Password</th>
+                        </tr>
+                    </thead>
+                    <tbody id="credsBody">
+                        <tr><td colspan="5" class="empty-cell">No credentials captured yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Captured Commands -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2>💻 Captured Commands</h2>
+            </div>
+            <div class="table-container">
+                <table class="data-table" id="cmdsTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>IP</th>
+                            <th>Service</th>
+                            <th>Command</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cmdsBody">
+                        <tr><td colspan="4" class="empty-cell">No commands captured yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══ Footer ═══ -->
+    <footer class="footer">
+        <span>retr0pot v1.0 — Defensive Security Research Tool</span>
+        <span>by <strong class="accent">retr0</strong></span>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
