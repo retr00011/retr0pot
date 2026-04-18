@@ -12,36 +12,36 @@
     ░        ░  ░            ░         ░ ░               ░ ░
 ```
 
-**Weaponized Deception Net [GHOST MODE]**
+**Advanced Active Defense & Deception Framework**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-e94560?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Status](https://img.shields.io/badge/Status-Underground-ff1744?style=for-the-badge)]()
+[![Security](https://img.shields.io/badge/Security-Active_Defense-00e676?style=for-the-badge)]()
+[![Status](https://img.shields.io/badge/Status-Production_Ready-blue?style=for-the-badge)]()
 
 </div>
 
 ---
 
-## 💀 What is retr0pot?
+## 🛡️ Overview
 
-Forget the basic scripts. **retr0pot** is a blackbox deception net designed to catch, exhaust, and unmask automated scanners and human adversaries alike. It doesn't just log attacks; it tarpits them, feeds them poisoned honeytokens, and tracks their every move in absolute stealth.
+**retr0pot** is a high-interaction deception framework engineered to shift the tactical advantage back to defenders. Designed with enterprise threat intelligence in mind, it safely emulates vulnerable infrastructure, disrupts automated reconnaissance via dynamic tarpitting, and traces adversary lateral movement using embedded honeytokens.
 
-> ⚠️ **You know what this is. Keep it underground.**
+It provides security teams with high-fidelity, real-time alerts without the noise of traditional IDS/IPS systems.
 
-## ⚡ Ghost Protocol Features
+## ⚡ Core Capabilities
 
-| Module | Description |
+| Capability | Technical Implementation |
 |---------|-------------|
-| 🐌 **Abyssal Tarpitting** | Asynchronous network delays (50-300ms) that drown Nmap scanners and break static timing signatures. |
-| 🎭 **Dynamic Jitter** | Randomizes protocol banners dynamically. You can't signature what constantly mutates. |
-| 🍯 **Poisoned Bait** | Fake AWS/Stripe keys injected into `.env` and `.aws/credentials`. If they use it, they expose themselves. |
-| 🛡️ **Blackhole Routing** | Stateful IP tracking. After 10 failed auths, the attacker's IP is silently dropped into the void. No errors, just timeouts. |
-| 📡 **Shadow Export** | Real-time JSON event streaming to hidden Discord/Slack webhooks. Watch them fail in real-time. |
-| 💻 **Phantom Shell** | Telnet sandbox featuring fake `/proc/cpuinfo`, `/proc/meminfo`, and randomized `ps` PIDs. It looks and bleeds like a real server. |
-| 📊 **Command Center** | Cyberpunk web UI mapping out service distribution, live payloads, and top attacker IPs. |
+| 🕒 **Dynamic Tarpitting** | Mitigates automated scanning (e.g., Nmap) via asynchronous connection delays (50-300ms), breaking static timing signatures and increasing attacker cost. |
+| 🍯 **Honeytoken Injection** | Exposes traceable, synthetic AWS and Stripe credentials within emulated files. External usage of these tokens provides immediate attribution. |
+| 🛡️ **Automated Response** | Stateful IP tracking mirroring Fail2Ban mechanics. Automatically drops connections at the socket level after repeated authentication failures. |
+| 📡 **SIEM Integration** | Native webhook support for real-time threat intelligence export to Splunk, ELK, Slack, or custom SOC dashboards. |
+| 💻 **High-Fidelity Emulation** | Interactive Telnet sandbox featuring accurate `/proc/cpuinfo`, memory footprints, and pseudo-randomized process tables to deceive manual inspection. |
+| 📊 **Real-time Analytics** | Purpose-built dashboard for visualizing attack vectors, service distribution, and credential harvesting attempts. |
 
 ## 🚀 Deployment
 
-### Clone & Init
+### Prerequisites
 
 ```bash
 git clone https://github.com/retr00011/retr0pot.git
@@ -49,19 +49,19 @@ cd retr0pot
 pip install -r requirements.txt
 ```
 
-### Ignite the Net
+### Initializing the Framework
 
 ```bash
-# Boot the deception engine
+# Initialize the deception services
 python honeypot.py
 
-# Spin up the command center (Port 5000)
+# Launch the analytics dashboard (Port 5000)
 python dashboard/app.py
 ```
 
-## ⚙️ Core Directives (`config.json`)
+## ⚙️ Configuration (`config.json`)
 
-Tweak the ghost engine parameters to match your target environment:
+The framework is highly modular. Configure evasion parameters, security thresholds, and SOC integrations via `config.json`:
 
 ```json
 {
@@ -86,21 +86,23 @@ Tweak the ghost engine parameters to match your target environment:
 }
 ```
 
-## 🎯 Tactical Deception
+## 🎯 Architectural Philosophy
 
-### Exhaustion (The Tarpit)
-Scanners look for instant banner grabs. `retr0pot` dynamically injects async sleep states before responding. An automated scanner will time out or misclassify the port entirely, thinking it hit a real, overloaded server. 
+### 1. Disrupting the Kill Chain (Tarpitting)
+Modern reconnaissance tools rely on predictable server response times. By injecting async delays, `retr0pot` artificially inflates the time required to scan the network, forcing automated tools to time out or misclassify services, ultimately protecting real assets.
 
-### The Honeytoken Trap
-When they breach the HTTP endpoints or drop into the Telnet shell, they hunt for credentials. `retr0pot` feeds them dead AWS keys. If you monitor those keys externally, you trace the attacker back to their own infrastructure.
+### 2. High-Fidelity Attribution (Honeytokens)
+When an adversary breaches the emulated HTTP or Telnet environments, they discover synthetic credentials. Monitoring these "poisoned" tokens (e.g., via AWS CloudTrail) provides definitive proof of lateral movement and intent, turning the attacker's own tooling against them.
 
-### Blackhole Ban
-It watches auth failures across all protocols simultaneously. Hit the limit, and the engine silently drops your socket layer. To the attacker, the server didn't block them; the server just *disappeared*.
+### 3. Noise Reduction
+Unlike standard firewalls that log every port knock, `retr0pot` focuses on interactive, high-intent activity. By correlating failed auth attempts and blocking aggressive IPs statefully, it delivers actionable intelligence directly to your SOC.
 
 ---
 
 <div align="center">
 
-**Crafted in the shadows by retr0**
+**Developed by retr0**
+
+*A portfolio project demonstrating advanced defensive security architecture.*
 
 </div>
