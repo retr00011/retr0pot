@@ -12,37 +12,36 @@
     ░        ░  ░            ░         ░ ░               ░ ░
 ```
 
-**Enterprise-Grade Deception Framework & Honeypot**
+**Weaponized Deception Net [GHOST MODE]**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-e94560?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-18ffff?style=for-the-badge)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Enterprise-ff9100?style=for-the-badge)]()
+[![Status](https://img.shields.io/badge/Status-Underground-ff1744?style=for-the-badge)]()
 
 </div>
 
 ---
 
-## 🔥 What is retr0pot Enterprise?
+## 💀 What is retr0pot?
 
-**retr0pot** is not just a honeypot; it's an advanced **Deception Framework**. Designed to fool Nmap scanners, evade Red Teams, and alert Blue Teams in real-time. It traps attackers in a tarpit, feeds them poisoned Honeytokens, and streams their activity directly to your SIEM via webhooks.
+Forget the basic scripts. **retr0pot** is a blackbox deception net designed to catch, exhaust, and unmask automated scanners and human adversaries alike. It doesn't just log attacks; it tarpits them, feeds them poisoned honeytokens, and tracks their every move in absolute stealth.
 
-> ⚠️ **For authorized corporate security research and red/blue teaming only.**
+> ⚠️ **You know what this is. Keep it underground.**
 
-## ⚡ Enterprise Features
+## ⚡ Ghost Protocol Features
 
-| Feature | Description |
+| Module | Description |
 |---------|-------------|
-| 🐌 **Nmap Tarpitting** | Asynchronous network delays (50-300ms) to bypass static scanner signatures and simulate load |
-| 🎭 **Banner Jittering** | Subtle randomization of protocol banners to evade static fingerprinting |
-| 🍯 **Honeytokens** | Poisoned AWS/Stripe keys injected into fake `.env` files and `.aws/credentials` |
-| 🛡️ **Auto-Ban (Fail2Ban)** | Stateful IP tracking that automatically drops connections after 10 failed auth attempts |
-| 📡 **SIEM Webhooks** | Real-time JSON event streaming to Slack, Discord, Splunk, or any custom endpoint |
-| 💻 **Advanced Emulation** | Telnet sandbox featuring fake `/proc/cpuinfo`, `/proc/meminfo`, and randomized `ps` PIDs |
-| 📊 **Real-time Dashboard** | Cyberpunk web UI with live event feeds, service distribution charts, and attacker ranking |
+| 🐌 **Abyssal Tarpitting** | Asynchronous network delays (50-300ms) that drown Nmap scanners and break static timing signatures. |
+| 🎭 **Dynamic Jitter** | Randomizes protocol banners dynamically. You can't signature what constantly mutates. |
+| 🍯 **Poisoned Bait** | Fake AWS/Stripe keys injected into `.env` and `.aws/credentials`. If they use it, they expose themselves. |
+| 🛡️ **Blackhole Routing** | Stateful IP tracking. After 10 failed auths, the attacker's IP is silently dropped into the void. No errors, just timeouts. |
+| 📡 **Shadow Export** | Real-time JSON event streaming to hidden Discord/Slack webhooks. Watch them fail in real-time. |
+| 💻 **Phantom Shell** | Telnet sandbox featuring fake `/proc/cpuinfo`, `/proc/meminfo`, and randomized `ps` PIDs. It looks and bleeds like a real server. |
+| 📊 **Command Center** | Cyberpunk web UI mapping out service distribution, live payloads, and top attacker IPs. |
 
-## 🚀 Quick Start
+## 🚀 Deployment
 
-### Install
+### Clone & Init
 
 ```bash
 git clone https://github.com/retr00011/retr0pot.git
@@ -50,17 +49,19 @@ cd retr0pot
 pip install -r requirements.txt
 ```
 
-### Run the Honeypot
+### Ignite the Net
 
 ```bash
-# Start the enterprise deception engine
+# Boot the deception engine
 python honeypot.py
 
-# In another terminal, start the live dashboard
+# Spin up the command center (Port 5000)
 python dashboard/app.py
 ```
 
-## ⚙️ Enterprise Configuration (`config.json`)
+## ⚙️ Core Directives (`config.json`)
+
+Tweak the ghost engine parameters to match your target environment:
 
 ```json
 {
@@ -85,23 +86,21 @@ python dashboard/app.py
 }
 ```
 
-## 🎯 Deception Tactics
+## 🎯 Tactical Deception
 
-### Evasion & Tarpitting
-Scanner detection relies heavily on timing. `retr0pot` dynamically injects async `sleep()` calls before sending banners or responses. An Nmap `-T4` scan will time out or misclassify the service, while a human attacker will simply perceive a slow, realistic corporate network.
+### Exhaustion (The Tarpit)
+Scanners look for instant banner grabs. `retr0pot` dynamically injects async sleep states before responding. An automated scanner will time out or misclassify the port entirely, thinking it hit a real, overloaded server. 
 
-### Honeytokens (The Poisoned Bait)
-When attackers breach the HTTP honeypot or Telnet shell, they hunt for credentials. `retr0pot` feeds them fake AWS access keys and Stripe tokens. If you monitor these tokens externally, you'll know exactly who is trying to use the stolen data.
+### The Honeytoken Trap
+When they breach the HTTP endpoints or drop into the Telnet shell, they hunt for credentials. `retr0pot` feeds them dead AWS keys. If you monitor those keys externally, you trace the attacker back to their own infrastructure.
 
-### Auto-Ban Simulation
-To mimic a defended enterprise environment (like a server running Fail2Ban or CrowdStrike), the honeypot tracks failed authentication attempts statefully across all protocols. On the 10th failure, the attacker's IP is silently dropped at the socket level for 60 minutes.
+### Blackhole Ban
+It watches auth failures across all protocols simultaneously. Hit the limit, and the engine silently drops your socket layer. To the attacker, the server didn't block them; the server just *disappeared*.
 
 ---
 
 <div align="center">
 
-**Built with 🖤 by retr0**
-
-*Enterprise Defensive Security Tool — Use Responsibly.*
+**Crafted in the shadows by retr0**
 
 </div>

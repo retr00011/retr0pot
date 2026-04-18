@@ -395,7 +395,7 @@ class FTPHoneypot(asyncio.Protocol):
 #  MAIN BOOT
 # ═══════════════════════════════════════════════════════════════
 async def main():
-    print(f"\033[38;5;196m  retr0pot Enterprise v2.0 — SIEM & Deception Enabled\033[0m")
+    print(f"\033[38;5;196m  retr0pot v2.0 — Weaponized Deception Net [GHOST MODE]\033[0m")
     loop = asyncio.get_event_loop()
     servers = []
 
